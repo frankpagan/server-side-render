@@ -3,7 +3,7 @@ import { checkValue, ObjectId } from "@cocreate/utils";
 
 // Using a Set for O(1) lookups is cleaner and faster than an object map
 const IGNORE_ELEMENTS = new Set([
-    "INPUT", "TEXTAREA", "SELECT", "LINK", "IFRAME", "COCREATE-SELECT"
+   "FORM", "INPUT", "TEXTAREA", "SELECT", "LINK", "IFRAME", "COCREATE-SELECT"
 ]);
 
 // Prevent these tags from triggering the generic [src] chunk-fetching logic
@@ -54,9 +54,7 @@ export async function HTML({
     // Core Render Function (placed at the top for prominence)
     async function render(currentDom, lastKey) {
         // Find target elements and filter out nested targets to prevent redundant querying 
-        const elements = currentDom.querySelectorAll(RENDER_SELECTOR).filter(el => {
-            return !el.parentNode || !el.parentNode.closest(RENDER_SELECTOR);
-        });
+        const elements = currentDom.querySelectorAll(RENDER_SELECTOR)
 
         for (let el of elements) {
             let isData = el.hasAttribute("array");
