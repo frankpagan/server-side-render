@@ -1,3 +1,21 @@
+# [1.13.0](https://github.com/CoCreate-app/CoCreate-server-side-render/compare/v1.12.8...v1.13.0) (2026-07-14)
+
+
+### Bug Fixes
+
+* handle error states for fetched files in server-side rendering ([8c492c3](https://github.com/CoCreate-app/CoCreate-server-side-render/commit/8c492c39669082348bc920bb553479eb35ed35a1))
+* removed post install ([2ce8447](https://github.com/CoCreate-app/CoCreate-server-side-render/commit/2ce8447779ca84c2a887b7bfbac27a626aaaa044))
+* semantic version handling. Reorganize .gitignore for improved clarity and structure ([15bf544](https://github.com/CoCreate-app/CoCreate-server-side-render/commit/15bf5442decac9654746486d4d4cec8a1ad775b4))
+* update .gitignore to exclude package-lock.json and pnpm-lock.yaml ([7605dff](https://github.com/CoCreate-app/CoCreate-server-side-render/commit/7605dff02dd0b3071583e987d95ac723609515bc))
+* update module export to ES6 syntax in release.config.js ([a29e40f](https://github.com/CoCreate-app/CoCreate-server-side-render/commit/a29e40f1aa52b9113473ed27fbaffada015e03ff))
+* update package.json to use ESM and restructure server/client entry points ([e9b4c83](https://github.com/CoCreate-app/CoCreate-server-side-render/commit/e9b4c83720aa05dd9c45fc94fc070521357c32eb))
+
+
+### Features
+
+* optimize rendering logic and improve error handling in server-side rendering ([208aeba](https://github.com/CoCreate-app/CoCreate-server-side-render/commit/208aebac9efe650b7ef5c30713d5c6a4cc5b0aac))
+* update package.json and refactor index.js to use ES modules ([7ab7c9d](https://github.com/CoCreate-app/CoCreate-server-side-render/commit/7ab7c9d225505ef368c3434278d695eb7ac6f8d7))
+
 ## [1.12.8](https://github.com/CoCreate-app/CoCreate-server-side-render/compare/v1.12.7...v1.12.8) (2026-04-04)
 
 
