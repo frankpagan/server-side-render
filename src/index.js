@@ -17,7 +17,7 @@ const RENDER_SELECTOR = "[array], [src]:not(script, img, iframe, audio, video, s
 /**
  * Main functional entry point for Server-Side Rendering.
  * Completely stateless—all required dependencies are passed directly as arguments.
- * * @param {Object} options
+ * @param {Object} options
  * @param {Object} options.file - The template file object containing source markup
  * @param {Object} options.organization - Organization configuration data
  * @param {Object} options.urlObject - Request URL parsed object
@@ -54,7 +54,7 @@ export async function HTML({
     // Core Render Function (placed at the top for prominence)
     async function render(currentDom, lastKey) {
         // Find target elements and filter out nested targets to prevent redundant querying 
-        const elements = currentDom.querySelectorAll(RENDER_SELECTOR)
+        const elements = currentDom.querySelectorAll(RENDER_SELECTOR);
 
         for (let el of elements) {
             let isData = el.hasAttribute("array");
@@ -65,7 +65,8 @@ export async function HTML({
             // 1. Process File Source (Takes priority over Data Source)
             if (isSrc) {
                 let src = el.getAttribute("src");
-                if (src) {
+                // Explicitly check that src is a valid non-empty string (handling null in v9.x)
+                if (src && typeof src === "string") {
                     let pathname = filePath;
                     if (!pathname.endsWith("/")) pathname += "/";
                     
@@ -212,23 +213,22 @@ export async function HTML({
             // Apply DOM mutations only after everything in this sub-tree branch is completely resolved
             if (chunkDom) {
                 if (el.getAttribute("value-type") === "outerHTML") {
-                    if (chunkDom.childNodes?.length) {
-                        el.replaceWith(...chunkDom.childNodes);
+                    // Create a static array copy of childNodes to prevent mutation index shifts during replacement
+                    const childNodes = chunkDom.childNodes ? Array.from(chunkDom.childNodes) : [];
+                    if (childNodes.length) {
+                        el.replaceWith(...childNodes);
                     } else {
                         el.remove();
                     }
                 } else {
                     el.setAttribute("rendered", "");
-                    el.innerHTML = "";
                     
-                    // Use node-html-parser compatible appendChild loop
-                    if (chunkDom.childNodes) {
-                        for (const child of [...chunkDom.childNodes]) {
-                            el.appendChild(child);
-                        }
-                    } else {
-                        el.appendChild(chunkDom);
-                    }
+                    // Use modern set_content native helper for v9.0.0 (safer and cleaner than manually appending nodes)
+                    const contentToInject = chunkDom.childNodes && chunkDom.childNodes.length > 0 
+                        ? Array.from(chunkDom.childNodes) 
+                        : chunkDom;
+                    
+                    el.set_content(contentToInject);
                 }
             }
         }
