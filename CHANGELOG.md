@@ -1,3 +1,10 @@
+# [1.14.0](https://github.com/CoCreate-app/CoCreate-server-side-render/compare/v1.13.0...v1.14.0) (2026-07-17)
+
+
+### Features
+
+* update automated workflow and release configuration for improved semantic release handling ([30e01d7](https://github.com/CoCreate-app/CoCreate-server-side-render/commit/30e01d75c47cb36dc20f83a136d7eb296887d504))
+
 # [1.13.0](https://github.com/CoCreate-app/CoCreate-server-side-render/compare/v1.12.8...v1.13.0) (2026-07-14)
 
 
