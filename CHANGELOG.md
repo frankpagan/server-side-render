@@ -1,3 +1,10 @@
+## [1.14.2](https://github.com/CoCreate-app/CoCreate-server-side-render/compare/v1.14.1...v1.14.2) (2026-07-19)
+
+
+### Bug Fixes
+
+* set default branch to main ([6f9123d](https://github.com/CoCreate-app/CoCreate-server-side-render/commit/6f9123dbdeb63a87fa65954b18ef985dac02ba78))
+
 ## [1.14.1](https://github.com/CoCreate-app/CoCreate-server-side-render/compare/v1.14.0...v1.14.1) (2026-07-17)
 
 
