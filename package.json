@@ -1,16 +1,18 @@
 {
   "name": "@cocreate/server-side-render",
   "version": "1.14.2",
-  "description": "A simple server-side-render component in vanilla javascript. Easily configured using HTML5 data-attributes and/or JavaScript API.",
+  "description": "High-performance, stateless server-side rendering (SSR) engine with recursive HTML template parsing, multi-source data resolution, and automated circular dependency protection.",
   "keywords": [
-    "server-side-render",
-    "low-code",
-    "realtime",
-    "realtime-framework",
-    "collaboration",
-    "shared-editing",
-    "html5-framework",
-    "javascript-framework"
+    "server-side-rendering",
+    "ssr-engine",
+    "html-parsing",
+    "recursive-rendering",
+    "stateless-utility",
+    "template-interpolation",
+    "metadata-merging",
+    "circular-dependency-prevention",
+    "i18n-ssr",
+    "cocreate-module"
   ],
   "publishConfig": {
     "access": "public"
