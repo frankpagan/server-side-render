@@ -1,407 +1,399 @@
-import { parse } from "node-html-parser";
-import { checkValue, ObjectId } from "@cocreate/utils";
+import { checkValue, ObjectId, HTMLScanner } from "@cocreate/utils";
 
-// Using a Set for O(1) lookups is cleaner and faster than an object map
-const IGNORE_ELEMENTS = new Set([
-   "FORM", "INPUT", "TEXTAREA", "SELECT", "LINK", "IFRAME", "COCREATE-SELECT"
-]);
-
-// Prevent these tags from triggering the generic [src] chunk-fetching logic
+// Elements that should not have generic [src] fetch logic applied
 const SKIP_SRC_ELEMENTS = new Set([
-    "SCRIPT", "IMG", "IFRAME", "AUDIO", "VIDEO", "SOURCE", "TRACK", "INPUT", "EMBED", "FRAME"
+  "SCRIPT", "IMG", "IFRAME", "AUDIO", "VIDEO", "SOURCE", "TRACK", "INPUT", "EMBED", "FRAME"
 ]);
 
-// CSS Selector for identifying target elements
-const RENDER_SELECTOR = "[array], [src]:not(script, img, iframe, audio, video, source, track, input, embed, frame)";
+// Element types ignored during data attribute rendering
+const IGNORE_ELEMENTS = new Set([
+  "FORM", "INPUT", "TEXTAREA", "SELECT", "LINK", "IFRAME", "COCREATE-SELECT"
+]);
 
 /**
- * Main functional entry point for Server-Side Rendering.
- * Completely stateless—all required dependencies are passed directly as arguments.
- * @param {Object} options
- * @param {Object} options.file - The template file object containing source markup
- * @param {Object} options.organization - Organization configuration data
- * @param {Object} options.urlObject - Request URL parsed object
- * @param {string} options.langRegion - Target language region (e.g., 'en-US')
- * @param {string} options.lang - Target language (e.g., 'en')
- * @param {string} options.theme - Visual theme (e.g., 'dark')
- * @param {Function} options.resolveFile - Injected custom file resolver callback
- * @param {Object} options.crud - Crud database service instance
- * @returns {Promise<string>} The fully rendered HTML string
+ * Extracts <head> content from chunk HTML and merges title, meta, link, script tags into root HTML head.
+ * Completely powered by HTMLScanner handles.
+ * @param {string} rootHtml - Main host HTML string
+ * @param {string} chunkHtml - Fetched chunk HTML string
+ * @returns {{ rootHtml: string, cleanChunkHtml: string }}
+ */
+function extractAndMergeHead(rootHtml, chunkHtml) {
+  const chunkDoc = new HTMLScanner(chunkHtml);
+  const headHandles = chunkDoc.querySelectorAll({ tags: ["HEAD"] });
+
+  if (headHandles.length === 0) {
+    return { rootHtml, cleanChunkHtml: chunkHtml };
+  }
+
+  const chunkHeadHandle = headHandles[0];
+  const chunkHeadContent = chunkHeadHandle.getInnerHTML();
+
+  // Remove <head> tag from chunk
+  chunkHeadHandle.replaceWith("");
+  const cleanChunkHtml = chunkDoc.toString();
+
+  const rootDoc = new HTMLScanner(rootHtml);
+  const rootHeadHandles = rootDoc.querySelectorAll({ tags: ["HEAD"] });
+
+  if (rootHeadHandles.length > 0) {
+    const rootHeadHandle = rootHeadHandles[0];
+    const existingContent = rootHeadHandle.getInnerHTML();
+    rootHeadHandle.setInnerHTML(`${existingContent}\n${chunkHeadContent}\n`);
+    rootHtml = rootDoc.toString();
+  } else {
+    // Inject <head> into root html tag if missing
+    const rootHtmlHandles = rootDoc.querySelectorAll({ tags: ["HTML"] });
+    if (rootHtmlHandles.length > 0) {
+      const htmlHandle = rootHtmlHandles[0];
+      const existingInner = htmlHandle.getInnerHTML();
+      htmlHandle.setInnerHTML(`<head>\n${chunkHeadContent}\n</head>\n${existingInner}`);
+      rootHtml = rootDoc.toString();
+    } else {
+      rootHtml = `<head>\n${chunkHeadContent}\n</head>\n` + rootHtml;
+    }
+  }
+
+  return { rootHtml, cleanChunkHtml };
+}
+
+/**
+ * Applies theme attribute to <html> tag and injects color-scheme meta tag into <head> using HTMLScanner
+ * @param {string} html - Full document HTML string
+ * @param {string} theme - Selected theme name (e.g., 'dark')
+ * @returns {string} Modified HTML
+ */
+function applyTheme(html, theme) {
+  if (!theme) return html;
+
+  const doc = new HTMLScanner(html);
+
+  // Apply data-bs-theme attribute on <html> element
+  const htmlHandles = doc.querySelectorAll({ tags: ["HTML"] });
+  if (htmlHandles.length > 0) {
+    htmlHandles[0].setAttribute("data-bs-theme", theme);
+  }
+
+  // Update or inject <meta name="color-scheme">
+  const metaHandles = doc.querySelectorAll({ tags: ["META"] });
+  let colorSchemeMeta = metaHandles.find(h => h.getAttribute("name") === "color-scheme");
+
+  if (colorSchemeMeta) {
+    colorSchemeMeta.setAttribute("content", theme);
+  } else {
+    const headHandles = doc.querySelectorAll({ tags: ["HEAD"] });
+    if (headHandles.length > 0) {
+      const existingHeadContent = headHandles[0].getInnerHTML();
+      headHandles[0].setInnerHTML(`${existingHeadContent}\n<meta name="color-scheme" content="${theme}">`);
+    }
+  }
+
+  return doc.toString();
+}
+
+/**
+ * Generates <link rel="alternate" ...> tags for organization languages.
+ * @param {Object} file - File object
+ * @param {Object} organization - Organization metadata
+ * @param {Object} urlObject - Request URL
+ * @returns {string} Link tags string
+ */
+function createLanguageLinkTags(file, organization, urlObject) {
+  if (!organization?.languages?.length) return "";
+
+  let tags = `<link rel="alternate" hreflang="x-default" href="https://${urlObject.hostname}${file.pathname}">\n`;
+  for (const language of organization.languages) {
+    const hrefUrl = `https://${urlObject.hostname}/${language}${file.pathname}`;
+    tags += `<link rel="alternate" hreflang="${language}" href="${hrefUrl}">\n`;
+  }
+  return tags;
+}
+
+/**
+ * Merges target language dictionary entries from a chunk's translation object into the unified translations accumulator.
+ * @param {Record<string, Record<string, Object>>} targetMap - Dynamic accumulator map holding merged translations.
+ * @param {Record<string, Record<string, Object>>} sourceTranslations - Translation object from a fetched file.
+ * @param {string} [langRegion] - Target locale code (e.g., "en-US").
+ * @param {string} [lang] - Fallback primary language code (e.g., "en").
+ */
+function mergeTranslationSource(targetMap, sourceTranslations, langRegion, lang) {
+  if (!sourceTranslations) return;
+
+  const targetLangKey = (langRegion && sourceTranslations[langRegion])
+    ? langRegion
+    : (lang && sourceTranslations[lang])
+      ? lang
+      : null;
+
+  if (!targetLangKey || !sourceTranslations[targetLangKey]) return;
+
+  if (!targetMap[targetLangKey]) {
+    targetMap[targetLangKey] = {};
+  }
+
+  Object.assign(targetMap[targetLangKey], sourceTranslations[targetLangKey]);
+}
+
+/**
+ * Fast Language-First Translator operating directly via HTMLScanner handles.
+ * Scans for `[i18n]` attributes and replaces element content and attributes.
+ */
+function translate(html, translations, langRegion, lang) {
+  if (!html || !translations || (!langRegion && !lang)) return html;
+
+  const langDict = translations[langRegion] || translations[lang];
+  if (!langDict) return html;
+
+  const doc = new HTMLScanner(html);
+  const elements = doc.querySelectorAll({ attributes: ["i18n"] });
+
+  for (const el of elements) {
+    const key = el.getAttribute("i18n");
+    const values = langDict[key];
+    if (!values) continue;
+
+    for (const [attr, value] of Object.entries(values)) {
+      if (attr === "text" || value === undefined || value === null) continue;
+      el.setAttribute(attr, String(value));
+    }
+
+    if (values.text !== undefined && values.text !== null && !el.isSelfClosing) {
+      let contentStr = "";
+      if (el.tagName === "SCRIPT" && typeof values.text === "object") {
+        contentStr = JSON.stringify(values.text, null, 2);
+      } else {
+        contentStr = String(values.text);
+      }
+      el.setInnerHTML(contentStr);
+    }
+  }
+
+  let translatedHtml = doc.toString();
+
+  // Fallback for application/ld+json script if keyed as "ld+json" without explicit attribute
+  if (langDict["ld+json"]) {
+    const jsonDoc = new HTMLScanner(translatedHtml);
+    const scriptHandles = jsonDoc.querySelectorAll({ tags: ["SCRIPT"] });
+    for (const el of scriptHandles) {
+      if (el.getAttribute("type") === "application/ld+json") {
+        const values = langDict["ld+json"];
+        const content = values.text || values;
+        const scriptContent = typeof content === "object" ? JSON.stringify(content, null, 2) : String(content);
+        el.setInnerHTML(scriptContent);
+        break;
+      }
+    }
+    translatedHtml = jsonDoc.toString();
+  }
+
+  return translatedHtml;
+}
+
+/**
+ * Main functional entry point for Server-Side Rendering using HTMLScanner.
+ * @param {Object} options - SSR options
+ * @returns {Promise<string>} Fully rendered and translated HTML string
  */
 export async function HTML({
-    file,
-    organization,
-    urlObject,
-    langRegion,
-    lang,
-    theme,
-    resolveFile,
-    crud
+  file,
+  organization,
+  urlObject,
+  langRegion,
+  lang,
+  theme,
+  resolveFile,
+  crud
 }) {
-    let dep = [];
-    let dbCache = new Map();
-    
-    const organization_id = file?.organization_id;
-    const host = urlObject?.hostname;
+  let dep = [];
+  const dbCache = new Map();
 
-    // Ensure file.path has a fallback to prevent runtime properties errors
-    const filePath = file?.path || file?.pathname || "/";
+  // Accumulate translations from root and recursively included files
+  let activeTranslations = {};
+  if (file?.translations) {
+    mergeTranslationSource(activeTranslations, file.translations, langRegion, lang);
+  }
 
-    // Apply parsing directly on root file source without modifying any paths
-    let rootSrc = file?.src || "";
-    let dom = parse(rootSrc);
+  const organization_id = file?.organization_id;
+  const host = urlObject?.hostname;
+  const filePath = file?.path || file?.pathname || "/";
+  let rootHtml = file?.src || "";
 
-    // Core Render Function (placed at the top for prominence)
-    async function render(currentDom, lastKey) {
-        // Find target elements and filter out nested targets to prevent redundant querying 
-        const elements = currentDom.querySelectorAll(RENDER_SELECTOR);
+  async function renderRecursive(currentHtml, lastKey) {
+    const doc = new HTMLScanner(currentHtml);
+    const targets = doc.querySelectorAll({
+      attributes: ["src", "array"],
+      excludeTags: ["SCRIPT", "IMG", "IFRAME", "AUDIO", "VIDEO", "SOURCE", "TRACK", "INPUT", "EMBED", "FRAME"]
+    });
 
-        for (let el of elements) {
-            let isData = el.hasAttribute("array");
-            let isSrc = el.hasAttribute("src") && !SKIP_SRC_ELEMENTS.has(el.tagName.toUpperCase());
+    for (const el of targets) {
+      let chunkStr = null;
+      const isSrc = el.hasAttribute("src") && !SKIP_SRC_ELEMENTS.has(el.tagName);
+      const isData = el.hasAttribute("array");
 
-            let chunkDom = null;
+      // 1. Process File Source [src]
+      if (isSrc) {
+        let src = el.getAttribute("src");
+        if (src && typeof src === "string") {
+          let pathname = filePath;
+          if (!pathname.endsWith("/")) pathname += "/";
 
-            // 1. Process File Source (Takes priority over Data Source)
-            if (isSrc) {
-                let src = el.getAttribute("src");
-                // Explicitly check that src is a valid non-empty string (handling null in v9.x)
-                if (src && typeof src === "string") {
-                    let pathname = filePath;
-                    if (!pathname.endsWith("/")) pathname += "/";
-                    
-                    pathname = new URL(src, `http://localhost${pathname}`).pathname;
-                    if (pathname.endsWith("/")) pathname += "index.html";
+          pathname = new URL(src, `http://localhost${pathname}`).pathname;
+          if (pathname.endsWith("/")) pathname += "index.html";
 
-                    // CIRCULAR DEPENDENCY CHECK: Track active src resolution paths in loop prevention list
-                    let srcKey = `file:${pathname}`;
-                    if (dep.includes(srcKey)) {
-                        throw new Error(`Infinite loop detected: Parent context "${lastKey}" requested "${srcKey}", which is already in the active import chain.`);
-                    }
-                    dep.push(srcKey);
+          const srcKey = `file:${pathname}`;
+          if (dep.includes(srcKey)) {
+            throw new Error(`Infinite loop detected: Parent context "${lastKey}" requested "${srcKey}", which is already in active chain.`);
+          }
+          dep.push(srcKey);
 
-                    let fetchedFile = null;
+          let fetchedFile = null;
+          if (typeof resolveFile === "function") {
+            fetchedFile = await resolveFile(pathname);
+          } else if (crud) {
+            const data = await crud.send({
+              method: "object.read",
+              host,
+              array: "files",
+              object: "",
+              $filter: { query: { pathname } },
+              organization_id
+            });
+            fetchedFile = data?.object?.[0] || null;
+          }
 
-                    // Use injected resolver callback if provided, otherwise fallback to CRUD query
-                    if (typeof resolveFile === "function") {
-                        fetchedFile = await resolveFile(pathname);
-                    } else if (crud) {
-                        let data = await crud.send({
-                            method: "object.read",
-                            host,
-                            array: "files",
-                            object: "",
-                            $filter: { query: { pathname } },
-                            organization_id
-                        });
-                        fetchedFile = data?.object?.[0] || null;
-                    }
+          let statusCode = fetchedFile?.status;
+          if (!statusCode) {
+            if (!fetchedFile || !fetchedFile.src) statusCode = 404;
+            else if (fetchedFile.public === false || String(fetchedFile.public) === "false") statusCode = 403;
+            else statusCode = 200;
+          }
 
-                    // Intelligent Status Code Handling
-                    let statusCode = fetchedFile?.status;
-                    if (!statusCode) {
-                        if (!fetchedFile || !fetchedFile.src) statusCode = 404;
-                        else if (fetchedFile.public === false || String(fetchedFile.public) === "false") statusCode = 403;
-                        else statusCode = 200;
-                    }
-
-                    if (statusCode >= 400) {
-                        el.setAttribute("error", statusCode.toString());
-                    } 
-
-                    // Render if status is successful OR if the element explicitly forces rendering errors via 'render-error'
-                    if (statusCode < 400 || el.hasAttribute("render-error")) {
-                        let chunkVal = fetchedFile?.src;
-
-                        if (chunkVal) {
-                            // Decode base64 SVG if necessary
-                            if (typeof chunkVal === "string" && chunkVal.startsWith("data:image/svg+xml;base64,")) {
-                                chunkVal = Buffer.from(chunkVal.split(",")[1], "base64").toString("utf-8");
-                            }
-
-                            // Normalize non-string values safely to strings before parsing (failsafe)
-                            let chunkStr = typeof chunkVal === 'string' ? chunkVal : String(chunkVal);
-                            chunkDom = parse(chunkStr);
-
-                            // Extract and merge any embedded <head> parameters before rendering nested items
-                            extractAndMergeHead(chunkDom, dom);
-                            
-                            // Passing dynamic srcKey instead of static "src-chunk" to preserve trace context
-                            chunkDom = await render(chunkDom, srcKey);
-                        }
-                    }
-                    dep.pop(); // Complete tracking cycle for this source resolution
-                }
-            }
-            // 2. Process Data Source (Only runs if element does not have a valid src being resolved)
-            else if (isData) {
-                let shouldProcessData = true;
-
-                // Exclude specific tags, templates, actions, and components from rendering
-                if (IGNORE_ELEMENTS.has(el.tagName.toUpperCase())) {
-                    shouldProcessData = false;
-                } else if (el.closest(".template, [template], template, [render]")) {
-                    shouldProcessData = false;
-                } else if (el.hasAttribute("render-query") || el.hasAttribute("component") || el.hasAttribute("plugin") || el.hasAttribute("actions")) {
-                    shouldProcessData = false;
-                }
-
-                if (shouldProcessData && crud) {
-                    let array = el.getAttribute("array");
-                    let key = el.getAttribute("key"); // Optional attribute
-                    let _id = el.getAttribute("object") || "";
-                    
-                    let $filter = {};
-                    let filterAttr = el.getAttribute("filter");
-                    if (filterAttr) {
-                        try {
-                            $filter = JSON.parse(filterAttr);
-                        } catch (e) {
-                            $filter = {};
-                        }
-                    }
-
-                    if (array && checkValue(array) && (!key || checkValue(key))) {
-                        let keyStr = key ? `-${key}` : '';
-                        let filterKeyStr = filterAttr ? `-${filterAttr}` : '';
-                        let crudKey = `${_id}${array}${keyStr}${filterKeyStr}`;
-                        
-                        if (dep.includes(crudKey)) {
-                            throw new Error(`Infinite loop detected: Parent context "${lastKey}" requested data key "${crudKey}", which has already been rendered.`);
-                        }
-                        dep.push(crudKey);
-
-                        let cacheKey = `${_id}${array}${filterKeyStr}`;
-                        let data;
-                        
-                        if (dbCache.has(cacheKey)) {
-                            data = dbCache.get(cacheKey);
-                        } else {
-                            data = await crud.send({
-                                method: "object.read",
-                                host,
-                                array,
-                                object: _id ? { _id } : "",
-                                $filter,
-                                organization_id
-                            });
-                            if (data?.object?.[0]) data = data.object[0];
-                            dbCache.set(cacheKey, data);
-                        }
-
-                        if (data) {
-                            // If a key is defined, fetch that key's value; otherwise, render the entire object/document
-                            let chunkVal = key ? data[key] : data;
-
-                            if (chunkVal !== undefined && chunkVal !== null) {
-                                // Normalize objects to JSON strings, and everything else safely to standard strings
-                                let chunkStr = typeof chunkVal === 'object' ? JSON.stringify(chunkVal) : String(chunkVal);
-                                chunkDom = parse(chunkStr);
-
-                                // Extract and merge any embedded <head> parameters before rendering nested items
-                                extractAndMergeHead(chunkDom, dom);
-
-                                // Recursively resolve all nested requirements in the chunk BEFORE inserting it
-                                chunkDom = await render(chunkDom, crudKey);
-                            }
-                        }
-                        dep.pop();
-                    }
-                }
+          if (statusCode < 400 || el.hasAttribute("render-error")) {
+            if (fetchedFile?.translations) {
+              mergeTranslationSource(activeTranslations, fetchedFile.translations, langRegion, lang);
             }
 
-            // Apply DOM mutations only after everything in this sub-tree branch is completely resolved
-            if (chunkDom) {
-                if (el.getAttribute("value-type") === "outerHTML") {
-                    // Create a static array copy of childNodes to prevent mutation index shifts during replacement
-                    const childNodes = chunkDom.childNodes ? Array.from(chunkDom.childNodes) : [];
-                    if (childNodes.length) {
-                        el.replaceWith(...childNodes);
-                    } else {
-                        el.remove();
-                    }
-                } else {
-                    el.setAttribute("rendered", "");
-                    
-                    // Use modern set_content native helper for v9.0.0 (safer and cleaner than manually appending nodes)
-                    const contentToInject = chunkDom.childNodes && chunkDom.childNodes.length > 0 
-                        ? Array.from(chunkDom.childNodes) 
-                        : chunkDom;
-                    
-                    el.set_content(contentToInject);
-                }
+            let val = fetchedFile?.src;
+            if (typeof val === "string" && val.startsWith("data:image/svg+xml;base64,")) {
+              val = Buffer.from(val.split(",")[1], "base64").toString("utf-8");
             }
+            if (val !== undefined && val !== null) {
+              chunkStr = String(val);
+              const merged = extractAndMergeHead(rootHtml, chunkStr);
+              rootHtml = merged.rootHtml;
+              chunkStr = await renderRecursive(merged.cleanChunkHtml, srcKey);
+            }
+          }
+          dep.pop();
+        }
+      }
+      // 2. Process Data Source [array]
+      else if (isData) {
+        let shouldProcess = true;
+
+        if (IGNORE_ELEMENTS.has(el.tagName)) {
+          shouldProcess = false;
+        } else if (el.hasAttribute("render-query") || el.hasAttribute("component") || el.hasAttribute("plugin") || el.hasAttribute("actions")) {
+          shouldProcess = false;
         }
 
-        return currentDom;
-    }
+        if (shouldProcess && crud) {
+          const array = el.getAttribute("array");
+          const key = el.getAttribute("key");
+          const _id = el.getAttribute("object") || "";
+          const filterAttr = el.getAttribute("filter");
+          let $filter = {};
 
-    // Initialize recursion tracker with the primary file pathname to catch immediate self-reference imports
-    const rootNormalizedPath = filePath.endsWith("/") ? `${filePath}index.html` : filePath;
-    dep.push(`file:${rootNormalizedPath}`);
+          if (filterAttr) {
+            try { $filter = JSON.parse(filterAttr); } catch (e) {}
+          }
 
-    dom = await render(dom, "root");
-    
-    if (langRegion || lang) {
-        dom = translate(dom, file, langRegion, lang);
-    }
+          if (array && checkValue(array) && (!key || checkValue(key))) {
+            const keyStr = key ? `-${key}` : "";
+            const filterKeyStr = filterAttr ? `-${filterAttr}` : "";
+            const crudKey = `${_id}${array}${keyStr}${filterKeyStr}`;
 
-    // Apply theme data-attributes/meta-tags if a head is available, or can be lazily resolved
-    if (theme) {
-        const htmlEl = dom.querySelector("html");
-        try {
-            if (htmlEl?.setAttribute) htmlEl.setAttribute("data-bs-theme", theme);
-
-            const currentHead = dom.querySelector("head");
-            if (currentHead) {
-                let meta = currentHead.querySelector('meta[name="color-scheme"]');
-                if (meta?.setAttribute) {
-                    meta.setAttribute("content", theme);
-                } else {
-                    const metaNode = parse(`<meta name="color-scheme" content="${theme}">`);
-                    currentHead.appendChild(metaNode);
-                }
+            if (dep.includes(crudKey)) {
+              throw new Error(`Infinite loop detected: Parent context "${lastKey}" requested data key "${crudKey}".`);
             }
-        } catch (e) {
-            // fail-safe
-        }
-    }
+            dep.push(crudKey);
 
-    // Append localization link tags if head is present, or can be lazily resolved
-    if (organization?.languages?.length > 0) {
-        let langLinkTags = createLanguageLinkTags(file, organization, urlObject);
-        const currentHead = dom.querySelector("head");
-        if (currentHead && langLinkTags) {
-            const linksFragment = parse(langLinkTags);
-            for (const link of linksFragment.querySelectorAll("link")) {
-                currentHead.appendChild(link);
+            const cacheKey = `${_id}${array}${filterKeyStr}`;
+            let data;
+
+            if (dbCache.has(cacheKey)) {
+              data = dbCache.get(cacheKey);
+            } else {
+              data = await crud.send({
+                method: "object.read",
+                host,
+                array,
+                object: _id ? { _id } : "",
+                $filter,
+                organization_id
+              });
+              if (data?.object?.[0]) data = data.object[0];
+              dbCache.set(cacheKey, data);
             }
+
+            if (data) {
+              const chunkVal = key ? data[key] : data;
+              if (chunkVal !== undefined && chunkVal !== null) {
+                const rawChunk = typeof chunkVal === "object" ? JSON.stringify(chunkVal) : String(chunkVal);
+                const merged = extractAndMergeHead(rootHtml, rawChunk);
+                rootHtml = merged.rootHtml;
+                chunkStr = await renderRecursive(merged.cleanChunkHtml, crudKey);
+              }
+            }
+            dep.pop();
+          }
         }
-    }
+      }
 
-    dep = [];
-    dbCache.clear();
-    
-    let finalHtml = dom.toString();
-
-    // Apply ObjectId generation globally across the fully rendered document
-    finalHtml = finalHtml.replaceAll("ObjectId()", () => ObjectId().toString());
-
-    return finalHtml;
-}
-
-// ==========================================
-// Stateless Private Helper Functions
-// ==========================================
-
-function ensureMainHead(rootDom) {
-    let head = rootDom.querySelector("head");
-    if (!head) {
-        const htmlEl = rootDom.querySelector("html") || rootDom;
-        const headDom = parse("<head></head>");
-        head = headDom.querySelector("head");
-        if (htmlEl.childNodes && htmlEl.childNodes.length > 0) {
-            htmlEl.insertBefore(head, htmlEl.childNodes[0]);
+      if (chunkStr !== null) {
+        if (el.getAttribute("value-type") === "outerHTML") {
+          el.replaceWith(chunkStr);
         } else {
-            htmlEl.appendChild(head);
+          el.setAttribute("rendered", "");
+          el.setInnerHTML(chunkStr);
         }
-    }
-    return head;
-}
-
-function getMatchingSelector(newEl) {
-    const tagName = newEl.tagName.toUpperCase();
-    if (tagName === "TITLE") {
-        return "title";
-    }
-    if (tagName === "META") {
-        const name = newEl.getAttribute("name");
-        if (name) return `meta[name="${name}"]`;
-        const property = newEl.getAttribute("property");
-        if (property) return `meta[property="${property}"]`;
-    }
-    if (tagName === "SCRIPT") {
-        const type = newEl.getAttribute("type");
-        if (type === "application/ld+json") {
-            return 'script[type="application/ld+json"]';
-        }
-        const id = newEl.getAttribute("id");
-        if (id) return `script[id="${id}"]`;
-    }
-    if (tagName === "LINK") {
-        const rel = newEl.getAttribute("rel");
-        if (rel === "canonical") {
-            return 'link[rel="canonical"]';
-        }
-        const id = newEl.getAttribute("id");
-        if (id) return `link[id="${id}"]`;
-    }
-    return null;
-}
-
-function extractAndMergeHead(chunkDom, rootDom) {
-    const chunkHead = chunkDom.querySelector("head");
-    if (!chunkHead) return;
-
-    // Lazily ensure a main head exists on the root 'dom' since we found nested head assets to merge
-    const head = ensureMainHead(rootDom);
-
-    // Clone array of nodes to safely mutate during iteration
-    const children = [...chunkHead.childNodes];
-
-    for (const child of children) {
-        if (child.nodeType === 1) { // Element Node
-            const selector = getMatchingSelector(child);
-            let matched = false;
-            if (selector) {
-                const existing = head.querySelector(selector);
-                if (existing) {
-                    existing.replaceWith(child);
-                    matched = true;
-                }
-            }
-            if (!matched) {
-                head.appendChild(child);
-            }
-        } else {
-            // For text, script content, or comment nodes, append straight to main head
-            head.appendChild(child);
-        }
+      }
     }
 
-    // Remove empty nested head container from the chunk
-    chunkHead.remove();
-}
+    return doc.toString();
+  }
 
-function createLanguageLinkTags(file, organization, urlObject) {
-    let generatedLinksString = `<link rel="alternate" hreflang="x-default" href="https://${urlObject.hostname}${file.pathname}">\n`;
-    for (const language of organization.languages) {
-        const hrefUrl = `https://${urlObject.hostname}/${language}${file.pathname}`;
-        generatedLinksString += `<link rel="alternate" hreflang="${language}" href="${hrefUrl}">\n`;
+  const rootNormalizedPath = filePath.endsWith("/") ? `${filePath}index.html` : filePath;
+  dep.push(`file:${rootNormalizedPath}`);
+
+  rootHtml = await renderRecursive(rootHtml, "root");
+
+  // Apply translations to full composite string
+  if (langRegion || lang) {
+    rootHtml = translate(rootHtml, activeTranslations, langRegion, lang);
+  }
+
+  // Apply visual theme
+  if (theme) {
+    rootHtml = applyTheme(rootHtml, theme);
+  }
+
+  // Inject localization alternate links into <head>
+  if (organization?.languages?.length > 0) {
+    const langLinks = createLanguageLinkTags(file, organization, urlObject);
+    if (langLinks) {
+      const doc = new HTMLScanner(rootHtml);
+      const headHandles = doc.querySelectorAll({ tags: ["HEAD"] });
+      if (headHandles.length > 0) {
+        const headContent = headHandles[0].getInnerHTML();
+        headHandles[0].setInnerHTML(`${headContent}\n${langLinks}`);
+        rootHtml = doc.toString();
+      }
     }
-    return generatedLinksString;
-}
+  }
 
-function translate(dom, file, langRegion, lang) {
-    if (!file?.translations || (!langRegion && !lang)) return dom;
+  dep = [];
+  dbCache.clear();
 
-    for (let translation of file.translations) {
-        let elements = dom.querySelectorAll(translation.selector) || [];
-        for (let el of elements) {
-            if (!el) continue;
-            
-            if (translation.innerHTML) {
-                let content = translation.innerHTML[langRegion] || translation.innerHTML[lang];
-                if (content) el.innerHTML = content;
-            }
-            
-            if (translation.attributes) {
-                for (let [key, languageObj] of Object.entries(translation.attributes)) {
-                    let value = languageObj[langRegion] || languageObj[lang];
-                    if (value) el.setAttribute(key, value);
-                }
-            }
-        }
-    }
-    return dom;
+  // Replace ObjectId() tokens across final rendered document
+  return rootHtml.replaceAll("ObjectId()", () => ObjectId().toString());
 }
