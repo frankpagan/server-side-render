@@ -38,16 +38,7 @@
   },
   "type": "module",
   "main": "./src/index.js",
-  "exports": {
-    ".": "./src/index.js",
-    "./distribution": "./dist/mongodb.js",
-    "./installer": "./installer/mongodb.installer.js"
-  },
-  "devDependencies": {
-    "@cocreate/webpack": "^1.6.2"
-  },
   "dependencies": {
-    "@cocreate/utils": "^1.44.3",
-    "node-html-parser": "^9.0.0"
+    "@cocreate/utils": "^1.44.3"
   }
 }
