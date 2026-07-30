@@ -39,6 +39,6 @@
   "type": "module",
   "main": "./src/index.js",
   "dependencies": {
-    "@cocreate/utils": "^1.44.3"
+    "@cocreate/utils": "^1.46.0"
   }
 }
