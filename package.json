@@ -1,6 +1,6 @@
 {
   "name": "@cocreate/server-side-render",
-  "version": "1.18.0",
+  "version": "1.18.1",
   "description": "High-performance, stateless server-side rendering (SSR) engine with recursive HTML template parsing, multi-source data resolution, and automated circular dependency protection.",
   "keywords": [
     "server-side-rendering",
