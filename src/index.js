@@ -10,6 +10,9 @@ const IGNORE_ELEMENTS = new Set([
   "FORM", "INPUT", "TEXTAREA", "SELECT", "LINK", "IFRAME", "COCREATE-SELECT"
 ]);
 
+// Default maximum allowed recursion depth (0 disables the depth limit for infinite scaling)
+const DEFAULT_MAX_DEPTH = 25;
+
 /**
  * Extracts <head> content from chunk HTML and merges title, meta, link, script tags into root HTML head.
  * Completely powered by HTMLScanner handles.
@@ -201,7 +204,8 @@ export async function HTML({
   lang,
   theme,
   resolveFile,
-  crud
+  crud,
+  maxDepth = DEFAULT_MAX_DEPTH
 }) {
   let dep = [];
   const dbCache = new Map();
@@ -214,10 +218,15 @@ export async function HTML({
 
   const organization_id = file?.organization_id;
   const host = urlObject?.hostname;
-  const filePath = file?.path || file?.pathname || "/";
+  const rootFilePath = file?.path || file?.pathname || "/";
   let rootHtml = file?.src || "";
 
-  async function renderRecursive(currentHtml, lastKey) {
+  async function renderRecursive(currentHtml, lastKey, currentFilePath) {
+    // If maxDepth is 0, depth limiting is disabled and allowed to scale infinitely
+    if (maxDepth > 0 && dep.length > maxDepth) {
+      throw new Error(`Maximum recursive depth of ${maxDepth} exceeded in SSR rendering chain.`);
+    }
+
     const doc = new HTMLScanner(currentHtml);
     const targets = doc.querySelectorAll({
       attributes: ["src", "array"],
@@ -233,7 +242,7 @@ export async function HTML({
       if (isSrc) {
         let src = el.getAttribute("src");
         if (src && typeof src === "string") {
-          let pathname = filePath;
+          let pathname = currentFilePath;
           if (!pathname.endsWith("/")) pathname += "/";
 
           pathname = new URL(src, `http://localhost${pathname}`).pathname;
@@ -241,49 +250,52 @@ export async function HTML({
 
           const srcKey = `file:${pathname}`;
           if (dep.includes(srcKey)) {
-            throw new Error(`Infinite loop detected: Parent context "${lastKey}" requested "${srcKey}", which is already in active chain.`);
+            throw new Error(`Infinite loop detected: Parent context "${lastKey}" requested "${srcKey}", which is already in active chain: ${dep.join(" -> ")}`);
           }
+
           dep.push(srcKey);
-
-          let fetchedFile = null;
-          if (typeof resolveFile === "function") {
-            fetchedFile = await resolveFile(pathname);
-          } else if (crud) {
-            const data = await crud.send({
-              method: "object.read",
-              host,
-              array: "files",
-              object: "",
-              $filter: { query: { pathname } },
-              organization_id
-            });
-            fetchedFile = data?.object?.[0] || null;
-          }
-
-          let statusCode = fetchedFile?.status;
-          if (!statusCode) {
-            if (!fetchedFile || !fetchedFile.src) statusCode = 404;
-            else if (fetchedFile.public === false || String(fetchedFile.public) === "false") statusCode = 403;
-            else statusCode = 200;
-          }
-
-          if (statusCode < 400 || el.hasAttribute("render-error")) {
-            if (fetchedFile?.translations) {
-              mergeTranslationSource(activeTranslations, fetchedFile.translations, langRegion, lang);
+          try {
+            let fetchedFile = null;
+            if (typeof resolveFile === "function") {
+              fetchedFile = await resolveFile(pathname);
+            } else if (crud) {
+              const data = await crud.send({
+                method: "object.read",
+                host,
+                array: "files",
+                object: "",
+                $filter: { query: { pathname } },
+                organization_id
+              });
+              fetchedFile = data?.object?.[0] || null;
             }
 
-            let val = fetchedFile?.src;
-            if (typeof val === "string" && val.startsWith("data:image/svg+xml;base64,")) {
-              val = Buffer.from(val.split(",")[1], "base64").toString("utf-8");
+            let statusCode = fetchedFile?.status;
+            if (!statusCode) {
+              if (!fetchedFile || !fetchedFile.src) statusCode = 404;
+              else if (fetchedFile.public === false || String(fetchedFile.public) === "false") statusCode = 403;
+              else statusCode = 200;
             }
-            if (val !== undefined && val !== null) {
-              chunkStr = String(val);
-              const merged = extractAndMergeHead(rootHtml, chunkStr);
-              rootHtml = merged.rootHtml;
-              chunkStr = await renderRecursive(merged.cleanChunkHtml, srcKey);
+
+            if (statusCode < 400 || el.hasAttribute("render-error")) {
+              if (fetchedFile?.translations) {
+                mergeTranslationSource(activeTranslations, fetchedFile.translations, langRegion, lang);
+              }
+
+              let val = fetchedFile?.src;
+              if (typeof val === "string" && val.startsWith("data:image/svg+xml;base64,")) {
+                val = Buffer.from(val.split(",")[1], "base64").toString("utf-8");
+              }
+              if (val !== undefined && val !== null) {
+                chunkStr = String(val);
+                const merged = extractAndMergeHead(rootHtml, chunkStr);
+                rootHtml = merged.rootHtml;
+                chunkStr = await renderRecursive(merged.cleanChunkHtml, srcKey, pathname);
+              }
             }
+          } finally {
+            dep.pop();
           }
-          dep.pop();
         }
       }
       // 2. Process Data Source [array]
@@ -310,41 +322,44 @@ export async function HTML({
           if (array && checkValue(array) && (!key || checkValue(key))) {
             const keyStr = key ? `-${key}` : "";
             const filterKeyStr = filterAttr ? `-${filterAttr}` : "";
-            const crudKey = `${_id}${array}${keyStr}${filterKeyStr}`;
+            const crudKey = `data:${_id}${array}${keyStr}${filterKeyStr}`;
 
             if (dep.includes(crudKey)) {
-              throw new Error(`Infinite loop detected: Parent context "${lastKey}" requested data key "${crudKey}".`);
+              throw new Error(`Infinite loop detected: Parent context "${lastKey}" requested data key "${crudKey}", which is already in active chain: ${dep.join(" -> ")}`);
             }
+
             dep.push(crudKey);
+            try {
+              const cacheKey = `${_id}${array}${filterKeyStr}`;
+              let data;
 
-            const cacheKey = `${_id}${array}${filterKeyStr}`;
-            let data;
-
-            if (dbCache.has(cacheKey)) {
-              data = dbCache.get(cacheKey);
-            } else {
-              data = await crud.send({
-                method: "object.read",
-                host,
-                array,
-                object: _id ? { _id } : "",
-                $filter,
-                organization_id
-              });
-              if (data?.object?.[0]) data = data.object[0];
-              dbCache.set(cacheKey, data);
-            }
-
-            if (data) {
-              const chunkVal = key ? data[key] : data;
-              if (chunkVal !== undefined && chunkVal !== null) {
-                const rawChunk = typeof chunkVal === "object" ? JSON.stringify(chunkVal) : String(chunkVal);
-                const merged = extractAndMergeHead(rootHtml, rawChunk);
-                rootHtml = merged.rootHtml;
-                chunkStr = await renderRecursive(merged.cleanChunkHtml, crudKey);
+              if (dbCache.has(cacheKey)) {
+                data = dbCache.get(cacheKey);
+              } else {
+                data = await crud.send({
+                  method: "object.read",
+                  host,
+                  array,
+                  object: _id ? { _id } : "",
+                  $filter,
+                  organization_id
+                });
+                if (data?.object?.[0]) data = data.object[0];
+                dbCache.set(cacheKey, data);
               }
+
+              if (data) {
+                const chunkVal = key ? data[key] : data;
+                if (chunkVal !== undefined && chunkVal !== null) {
+                  const rawChunk = typeof chunkVal === "object" ? JSON.stringify(chunkVal) : String(chunkVal);
+                  const merged = extractAndMergeHead(rootHtml, rawChunk);
+                  rootHtml = merged.rootHtml;
+                  chunkStr = await renderRecursive(merged.cleanChunkHtml, crudKey, currentFilePath);
+                }
+              }
+            } finally {
+              dep.pop();
             }
-            dep.pop();
           }
         }
       }
@@ -362,37 +377,39 @@ export async function HTML({
     return doc.toString();
   }
 
-  const rootNormalizedPath = filePath.endsWith("/") ? `${filePath}index.html` : filePath;
+  const rootNormalizedPath = rootFilePath.endsWith("/") ? `${rootFilePath}index.html` : rootFilePath;
   dep.push(`file:${rootNormalizedPath}`);
 
-  rootHtml = await renderRecursive(rootHtml, "root");
+  try {
+    rootHtml = await renderRecursive(rootHtml, "root", rootNormalizedPath);
 
-  // Apply translations to full composite string
-  if (langRegion || lang) {
-    rootHtml = translate(rootHtml, activeTranslations, langRegion, lang);
-  }
+    // Apply translations to full composite string
+    if (langRegion || lang) {
+      rootHtml = translate(rootHtml, activeTranslations, langRegion, lang);
+    }
 
-  // Apply visual theme
-  if (theme) {
-    rootHtml = applyTheme(rootHtml, theme);
-  }
+    // Apply visual theme
+    if (theme) {
+      rootHtml = applyTheme(rootHtml, theme);
+    }
 
-  // Inject localization alternate links into <head>
-  if (organization?.languages?.length > 0) {
-    const langLinks = createLanguageLinkTags(file, organization, urlObject);
-    if (langLinks) {
-      const doc = new HTMLScanner(rootHtml);
-      const headHandles = doc.querySelectorAll({ tags: ["HEAD"] });
-      if (headHandles.length > 0) {
-        const headContent = headHandles[0].getInnerHTML();
-        headHandles[0].setInnerHTML(`${headContent}\n${langLinks}`);
-        rootHtml = doc.toString();
+    // Inject localization alternate links into <head>
+    if (organization?.languages?.length > 0) {
+      const langLinks = createLanguageLinkTags(file, organization, urlObject);
+      if (langLinks) {
+        const doc = new HTMLScanner(rootHtml);
+        const headHandles = doc.querySelectorAll({ tags: ["HEAD"] });
+        if (headHandles.length > 0) {
+          const headContent = headHandles[0].getInnerHTML();
+          headHandles[0].setInnerHTML(`${headContent}\n${langLinks}`);
+          rootHtml = doc.toString();
+        }
       }
     }
+  } finally {
+    dep = [];
+    dbCache.clear();
   }
-
-  dep = [];
-  dbCache.clear();
 
   // Replace ObjectId() tokens across final rendered document
   return rootHtml.replaceAll("ObjectId()", () => ObjectId().toString());
