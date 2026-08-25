@@ -13,7 +13,7 @@ Fork the [project on Github](https://github.com/CoCreate-app/CoCreate-server-sid
 ```
 git clone https://github.com/contributor/CoCreate-server-side-render.git
 cd CoCreate-server-side-render
-git remote add upstream https://github.com/CoCreate-app/CoCreate-server-side-render.git
+git remote add upstream https://gitlab.com/cocreatejs/CoCreate-server-side-render.git
 ```
 
 ## Create a Topic Branch
