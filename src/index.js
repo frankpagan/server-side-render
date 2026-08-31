@@ -264,7 +264,7 @@ export async function HTML({
                 host,
                 array: "files",
                 object: "",
-                $filter: { query: { pathname } },
+                filter: { query: { pathname } },
                 organization_id
               });
               fetchedFile = data?.object?.[0] || null;
@@ -313,10 +313,10 @@ export async function HTML({
           const key = el.getAttribute("key");
           const _id = el.getAttribute("object") || "";
           const filterAttr = el.getAttribute("filter");
-          let $filter = {};
+          let filter = {};
 
           if (filterAttr) {
-            try { $filter = JSON.parse(filterAttr); } catch (e) {}
+            try { filter = JSON.parse(filterAttr); } catch (e) {}
           }
 
           if (array && checkValue(array) && (!key || checkValue(key))) {
@@ -341,7 +341,7 @@ export async function HTML({
                   host,
                   array,
                   object: _id ? { _id } : "",
-                  $filter,
+                  filter,
                   organization_id
                 });
                 if (data?.object?.[0]) data = data.object[0];
