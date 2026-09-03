@@ -13,6 +13,74 @@ const IGNORE_ELEMENTS = new Set([
 // Default maximum allowed recursion depth (0 disables the depth limit for infinite scaling)
 const DEFAULT_MAX_DEPTH = 25;
 
+function parseState(value) {
+  if (!value) return {};
+  if (typeof value === "object" && !Array.isArray(value)) return value;
+  if (typeof value !== "string") return {};
+
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed
+      : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function isEnabled(value) {
+  return value === "" || (Boolean(value) && value !== "false");
+}
+
+function applyState(doc, state) {
+  if (!state || !Object.keys(state).length) return;
+
+  const elements = doc.querySelectorAll({ attributes: ["state-id"] });
+  for (const element of elements) {
+    const stateIds = String(element.getAttribute("state-id") || "")
+      .split(",")
+      .map(value => value.trim())
+      .filter(Boolean);
+
+    for (const stateId of stateIds) {
+      const values = state[stateId];
+      if (!values || typeof values !== "object" || Array.isArray(values)) continue;
+
+      const overwriteAttribute = element.getAttribute("state-overwrite");
+      const overwrite = isEnabled(
+        overwriteAttribute === null || overwriteAttribute === undefined
+          ? values.overwrite
+          : overwriteAttribute
+      );
+
+      for (const [attribute, value] of Object.entries(values)) {
+        if (value === undefined || value === null || attribute.startsWith("$")) continue;
+
+        if (attribute === "class" && value) {
+          const classes = new Set(
+            String(element.getAttribute("class") || "")
+              .split(/\s+/)
+              .filter(Boolean)
+          );
+          for (const name of String(value).split(/\s+/).filter(Boolean)) {
+            classes.add(name);
+          }
+          element.setAttribute("class", [...classes].join(" "));
+          continue;
+        }
+
+        const currentValue = element.getAttribute(attribute);
+        if (
+          element.hasAttribute(attribute) &&
+          (!currentValue || overwrite)
+        ) {
+          element.setAttribute(attribute, String(value));
+        }
+      }
+    }
+  }
+}
+
 /**
  * Extracts <head> content from chunk HTML and merges title, meta, link, script tags into root HTML head.
  * Completely powered by HTMLScanner handles.
@@ -203,12 +271,14 @@ export async function HTML({
   langRegion,
   lang,
   theme,
+  state,
   resolveFile,
   crud,
   maxDepth = DEFAULT_MAX_DEPTH
 }) {
   let dep = [];
   const dbCache = new Map();
+  const activeState = parseState(state);
 
   // Accumulate translations from root and recursively included files
   let activeTranslations = {};
@@ -227,7 +297,9 @@ export async function HTML({
       throw new Error(`Maximum recursive depth of ${maxDepth} exceeded in SSR rendering chain.`);
     }
 
-    const doc = new HTMLScanner(currentHtml);
+    let doc = new HTMLScanner(currentHtml);
+    applyState(doc, activeState);
+    doc = new HTMLScanner(doc.toString());
     const targets = doc.querySelectorAll({
       attributes: ["src", "array"],
       excludeTags: ["SCRIPT", "IMG", "IFRAME", "AUDIO", "VIDEO", "SOURCE", "TRACK", "INPUT", "EMBED", "FRAME"]
@@ -235,6 +307,7 @@ export async function HTML({
 
     for (const el of targets) {
       let chunkStr = null;
+      try {
       const isSrc = el.hasAttribute("src") && !SKIP_SRC_ELEMENTS.has(el.tagName);
       const isData = el.hasAttribute("array");
 
@@ -265,6 +338,7 @@ export async function HTML({
                 array: "files",
                 object: "",
                 filter: { query: { pathname } },
+                state,
                 organization_id
               });
               fetchedFile = data?.object?.[0] || null;
@@ -275,6 +349,10 @@ export async function HTML({
               if (!fetchedFile || !fetchedFile.src) statusCode = 404;
               else if (fetchedFile.public === false || String(fetchedFile.public) === "false") statusCode = 403;
               else statusCode = 200;
+            }
+
+            if (statusCode >= 400) {
+              el.setAttribute("error", String(statusCode));
             }
 
             if (statusCode < 400 || el.hasAttribute("render-error")) {
@@ -342,6 +420,7 @@ export async function HTML({
                   array,
                   object: _id ? { _id } : "",
                   filter,
+                  state,
                   organization_id
                 });
                 if (data?.object?.[0]) data = data.object[0];
@@ -368,9 +447,17 @@ export async function HTML({
         if (el.getAttribute("value-type") === "outerHTML") {
           el.replaceWith(chunkStr);
         } else {
-          el.setAttribute("rendered", "");
+          el.setAttribute("rendered", "true");
           el.setInnerHTML(chunkStr);
         }
+      }
+      } catch (error) {
+        const statusCode = Number(error?.statusCode || error?.status);
+        el.setAttribute(
+          "error",
+          String(statusCode >= 400 && statusCode < 600 ? statusCode : 500)
+        );
+        console.error("SSR element rendering failed:", error);
       }
     }
 

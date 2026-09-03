@@ -127,6 +127,11 @@ To preserve natural browser actions and prevent unintended payload generation, c
 | `filter` | `JSON String` | Passes explicit lookup query metrics directly into the operational database read pass. |
 | `value-type` | `"outerHTML"` | Instructs the parser to completely drop the outer wrapper node when replacing contents. |
 | `render-error` | *Presence Flag* | Forces the view to render markup contents even if target status headers return error codes (≥ 400). |
+| `rendered` | `"true"` | Added by SSR after content is inserted so the browser does not fetch and render the element again. |
+
+The file server forwards the request's `X-State` header to SSR as `state`. SSR
+includes that state in nested file and data CRUD envelopes so state-dependent
+queries can resolve before the HTML is returned.
 
 ---
 
