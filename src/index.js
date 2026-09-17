@@ -127,6 +127,63 @@ function extractAndMergeHead(rootHtml, chunkHtml) {
   return { rootHtml, cleanChunkHtml };
 }
 
+function extractStylesheetLinks(html) {
+  const doc = new HTMLScanner(html);
+  const links = [];
+  const linkHandles = doc.querySelectorAll({ tags: ["LINK"] });
+
+  for (const link of linkHandles) {
+    const rel = String(link.getAttribute("rel") || "")
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean);
+    if (
+      !rel.includes("stylesheet") ||
+      !link.getAttribute("href") ||
+      link.hasAttribute("array") ||
+      link.hasAttribute("object")
+    ) continue;
+
+    links.push({
+      html: link.getOuterHTML(),
+      href: link.getAttribute("href"),
+      media: link.getAttribute("media") || ""
+    });
+    link.replaceWith("");
+  }
+
+  return { cleanHtml: doc.toString(), links };
+}
+
+function mergeStylesheetLinks(html, links) {
+  if (!links.length) return html;
+
+  const unique = new Map();
+  for (const link of links) {
+    const key = `${link.href}\u0000${link.media}`;
+    if (!unique.has(key)) unique.set(key, link.html);
+  }
+
+  const content = [...unique.values()].join("\n");
+  const doc = new HTMLScanner(html);
+  const headHandles = doc.querySelectorAll({ tags: ["HEAD"] });
+
+  if (headHandles.length > 0) {
+    const head = headHandles[0];
+    head.setInnerHTML(`${head.getInnerHTML()}\n${content}\n`);
+    return doc.toString();
+  }
+
+  const htmlHandles = doc.querySelectorAll({ tags: ["HTML"] });
+  if (htmlHandles.length > 0) {
+    const root = htmlHandles[0];
+    root.setInnerHTML(`<head>\n${content}\n</head>\n${root.getInnerHTML()}`);
+    return doc.toString();
+  }
+
+  return `<head>\n${content}\n</head>\n${html}`;
+}
+
 /**
  * Applies theme attribute to <html> tag and injects color-scheme meta tag into <head> using HTMLScanner
  * @param {string} html - Full document HTML string
@@ -278,6 +335,7 @@ export async function HTML({
 }) {
   let dep = [];
   const dbCache = new Map();
+  const stylesheetLinks = [];
   const activeState = parseState(state);
 
   // Accumulate translations from root and recursively included files
@@ -366,6 +424,9 @@ export async function HTML({
               }
               if (val !== undefined && val !== null) {
                 chunkStr = String(val);
+                const stylesheets = extractStylesheetLinks(chunkStr);
+                stylesheetLinks.push(...stylesheets.links);
+                chunkStr = stylesheets.cleanHtml;
                 const merged = extractAndMergeHead(rootHtml, chunkStr);
                 rootHtml = merged.rootHtml;
                 chunkStr = await renderRecursive(merged.cleanChunkHtml, srcKey, pathname);
@@ -431,7 +492,9 @@ export async function HTML({
                 const chunkVal = key ? data[key] : data;
                 if (chunkVal !== undefined && chunkVal !== null) {
                   const rawChunk = typeof chunkVal === "object" ? JSON.stringify(chunkVal) : String(chunkVal);
-                  const merged = extractAndMergeHead(rootHtml, rawChunk);
+                  const stylesheets = extractStylesheetLinks(rawChunk);
+                  stylesheetLinks.push(...stylesheets.links);
+                  const merged = extractAndMergeHead(rootHtml, stylesheets.cleanHtml);
                   rootHtml = merged.rootHtml;
                   chunkStr = await renderRecursive(merged.cleanChunkHtml, crudKey, currentFilePath);
                 }
@@ -469,6 +532,12 @@ export async function HTML({
 
   try {
     rootHtml = await renderRecursive(rootHtml, "root", rootNormalizedPath);
+
+    const rootStylesheets = extractStylesheetLinks(rootHtml);
+    rootHtml = mergeStylesheetLinks(
+      rootStylesheets.cleanHtml,
+      [...rootStylesheets.links, ...stylesheetLinks]
+    );
 
     // Apply translations to full composite string
     if (langRegion || lang) {
