@@ -173,3 +173,21 @@ This software is dual-licensed under the GNU Affero General Public License versi
 * **Open Source Use:** For open-source projects and non-commercial use, this software is available under the AGPLv3. For the full license text, see the LICENSE file.
 * **Commercial Use:** For-profit companies and individuals intending to use this software for commercial purposes must obtain a commercial license. The commercial license is available when you sign up for an API key on our website.
 ```
+
+## Value transformations
+
+Fetched `src` and CRUD fragments use the shared value handlers from
+`@cocreate/utils` before nested includes are rendered. Use `value-*` for shared
+transformations or `set-value-*` for insertion-only transformations. Setter
+attributes override the corresponding shared attributes; `get-value-*` does not
+run during server rendering.
+
+```html
+<header
+    src="/components/offcanvas-app/header.html"
+    value-replace="/\{\{app\.name\}\}/g"
+    value-replacement="APIs"
+    value-type="outerHtml"></header>
+```
+
+Both `outerHtml` and `outerHTML` replace the include element itself.

@@ -1,4 +1,11 @@
-import { checkValue, ObjectId, HTMLScanner } from "@cocreate/utils";
+import { checkValue, ObjectId, HTMLScanner, getValueAttribute, transformValue, convertValue } from "@cocreate/utils";
+
+
+function transformChunk(element, value) {
+  value = transformValue(element, value, "set-value");
+  value = convertValue(value, getValueAttribute(element, "type", "set-value") || "");
+  return typeof value === "object" ? JSON.stringify(value, null, 2) : String(value);
+}
 
 // Elements that should not have generic [src] fetch logic applied
 const SKIP_SRC_ELEMENTS = new Set([
@@ -127,7 +134,12 @@ function extractAndMergeHead(rootHtml, chunkHtml) {
   return { rootHtml, cleanChunkHtml };
 }
 
-function extractStylesheetLinks(html) {
+function extractStylesheetLinks(html, rootHtml = html) {
+  // Fragments keep their links in place unless the host already has a head.
+  const rootDoc = new HTMLScanner(rootHtml);
+  if (!rootDoc.querySelectorAll({ tags: ["HEAD"] }).length) {
+    return { cleanHtml: html, links: [] };
+  }
   const doc = new HTMLScanner(html);
   const links = [];
   const linkHandles = doc.querySelectorAll({ tags: ["LINK"] });
@@ -423,8 +435,8 @@ export async function HTML({
                 val = Buffer.from(val.split(",")[1], "base64").toString("utf-8");
               }
               if (val !== undefined && val !== null) {
-                chunkStr = String(val);
-                const stylesheets = extractStylesheetLinks(chunkStr);
+                chunkStr = transformChunk(el, val);
+                const stylesheets = extractStylesheetLinks(chunkStr, rootHtml);
                 stylesheetLinks.push(...stylesheets.links);
                 chunkStr = stylesheets.cleanHtml;
                 const merged = extractAndMergeHead(rootHtml, chunkStr);
@@ -491,8 +503,8 @@ export async function HTML({
               if (data) {
                 const chunkVal = key ? data[key] : data;
                 if (chunkVal !== undefined && chunkVal !== null) {
-                  const rawChunk = typeof chunkVal === "object" ? JSON.stringify(chunkVal) : String(chunkVal);
-                  const stylesheets = extractStylesheetLinks(rawChunk);
+                  const rawChunk = transformChunk(el, chunkVal);
+                  const stylesheets = extractStylesheetLinks(rawChunk, rootHtml);
                   stylesheetLinks.push(...stylesheets.links);
                   const merged = extractAndMergeHead(rootHtml, stylesheets.cleanHtml);
                   rootHtml = merged.rootHtml;
@@ -507,7 +519,7 @@ export async function HTML({
       }
 
       if (chunkStr !== null) {
-        if (el.getAttribute("value-type") === "outerHTML") {
+        if (getValueAttribute(el, "type", "set-value")?.toLowerCase() === "outerhtml") {
           el.replaceWith(chunkStr);
         } else {
           el.setAttribute("rendered", "true");
