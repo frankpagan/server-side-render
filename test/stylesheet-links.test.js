@@ -59,7 +59,7 @@ for (const hasHead of [true, false]) {
             const resolveFile = async (pathname) => {
                 calls.push(pathname);
                 assert.ok(files[pathname], `Unexpected file: ${pathname}`);
-                return { src: files[pathname] };
+                return { src: files[pathname], headers: { "Cache-Control": "public" } };
             };
             const options = {
                 ...(useFileResolver ? { resolveFile } : {}),

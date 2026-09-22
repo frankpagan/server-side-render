@@ -203,12 +203,13 @@ function mergeStylesheetLinks(html, links) {
  * @returns {string} Modified HTML
  */
 function applyTheme(html, theme) {
-  if (!theme) return html;
-
   const doc = new HTMLScanner(html);
 
   // Apply data-bs-theme attribute on <html> element
   const htmlHandles = doc.querySelectorAll({ tags: ["HTML"] });
+  const selectedTheme = htmlHandles[0]?.getAttribute("data-bs-theme");
+  if (selectedTheme === "dark" || selectedTheme === "light") theme = selectedTheme;
+  if (theme !== "dark" && theme !== "light") return html;
   if (htmlHandles.length > 0) {
     htmlHandles[0].setAttribute("data-bs-theme", theme);
   }
@@ -412,13 +413,25 @@ export async function HTML({
                 organization_id
               });
               fetchedFile = data?.object?.[0] || null;
+              const cacheControl = Object.entries(fetchedFile?.headers || {})
+                .find(([name]) => name.toLowerCase() === "cache-control")?.[1];
+              const publicFile = typeof cacheControl === "string" &&
+                /(?:^|,)\s*public\s*(?:,|$)/i.test(cacheControl) &&
+                !/(?:^|,)\s*(?:private|must-revalidate)\b/i.test(cacheControl);
+              if (fetchedFile && !publicFile) fetchedFile = { status: 403 };
+
             }
 
             let statusCode = fetchedFile?.status;
             if (!statusCode) {
               if (!fetchedFile || !fetchedFile.src) statusCode = 404;
-              else if (fetchedFile.public === false || String(fetchedFile.public) === "false") statusCode = 403;
               else statusCode = 200;
+            }
+
+            if (statusCode === 304) {
+              el.setAttribute("error", "304");
+              el.removeAttribute("rendered");
+              continue;
             }
 
             if (statusCode >= 400) {
@@ -557,9 +570,7 @@ export async function HTML({
     }
 
     // Apply visual theme
-    if (theme) {
-      rootHtml = applyTheme(rootHtml, theme);
-    }
+    rootHtml = applyTheme(rootHtml, theme);
 
     // Inject localization alternate links into <head>
     if (organization?.languages?.length > 0) {
@@ -577,6 +588,15 @@ export async function HTML({
   } finally {
     dep = [];
     dbCache.clear();
+  }
+
+  const themeHtml = new HTMLScanner(rootHtml).querySelectorAll({ tags: ["HTML"] })[0];
+  if (themeHtml) {
+    console.log("[theme:response]", {
+      pathname: rootNormalizedPath,
+      detectedTheme: theme ?? null,
+      htmlTheme: themeHtml.getAttribute("data-bs-theme") ?? null
+    });
   }
 
   // Replace ObjectId() tokens across final rendered document
