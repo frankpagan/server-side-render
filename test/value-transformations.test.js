@@ -55,6 +55,26 @@ test('CRUD transformations are independent for elements sharing cached records',
     assert.match(result, /<p>Second<\/p>/);
 });
 
+test('CRUD identity without a key preserves element content', async () => {
+    let requests = 0;
+    const result = await render(
+        '<button array="ai-messages" object="message-id"><i>Delete</i></button>',
+        {
+            crud: {
+                send: async () => {
+                    requests++;
+                    return { object: [{ content: 'must not render' }] };
+                }
+            }
+        }
+    );
+
+    assert.equal(requests, 0);
+    assert.match(result, /<button[^>]*><i>Delete<\/i><\/button>/);
+    assert.doesNotMatch(result, /rendered(?:=|\s|>)/);
+    assert.doesNotMatch(result, /must not render/);
+});
+
 test('decoding and type conversion work without browser globals', async () => {
     const result = await render('<div array="parts" key="src" set-value-decode="json" set-value-type="array.$keys"></div>', {
         crud: { send: async () => ({ object: [{ src: '{"name":"APIs"}' }] }) }

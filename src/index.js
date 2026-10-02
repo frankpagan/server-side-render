@@ -466,7 +466,10 @@ export async function HTML({
                 else if (isData) {
                     let shouldProcess = true;
 
-                    if (IGNORE_ELEMENTS.has(el.tagName)) {
+                    if (
+                        IGNORE_ELEMENTS.has(el.tagName) ||
+                        !el.hasAttribute("key")
+                    ) {
                         shouldProcess = false;
                     } else if (el.hasAttribute("render-query") || el.hasAttribute("component") || el.hasAttribute("plugin") || el.hasAttribute("actions")) {
                         shouldProcess = false;
