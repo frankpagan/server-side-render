@@ -112,7 +112,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://gitlab.com/cocreatejs/CoCreate-server-side-render.git"
+    "url": "git+https://github.com/cocreatejs/CoCreate-server-side-render.git"
   },
   "author": "CoCreate LLC",
   "license": "MIT",
