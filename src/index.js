@@ -205,13 +205,13 @@ function mergeStylesheetLinks(html, links) {
 function applyTheme(html, theme) {
     const doc = new HTMLScanner(html);
 
-    // Apply data-color-scheme attribute on <html> element
+    // Apply color-scheme attribute on <html> element
     const htmlHandles = doc.querySelectorAll({ tags: ["HTML"] });
-    const selectedTheme = htmlHandles[0]?.getAttribute("data-color-scheme");
+    const selectedTheme = htmlHandles[0]?.getAttribute("color-scheme");
     if (selectedTheme === "dark" || selectedTheme === "light") theme = selectedTheme;
     if (theme !== "dark" && theme !== "light") return html;
     if (htmlHandles.length > 0) {
-        htmlHandles[0].setAttribute("data-color-scheme", theme);
+        htmlHandles[0].setAttribute("color-scheme", theme);
     }
 
     // Update or inject <meta name="color-scheme">

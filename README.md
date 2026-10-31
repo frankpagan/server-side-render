@@ -90,7 +90,7 @@ console.log(fullHtmlResponse);
 3. **File Dependency Splicing:** Prioritizes structural layouts matching active path variables (`src`) by looking up data records via an optional custom `resolveFile` handler or matching records via the active `crud` data controller.
 4. **Data Attribute Evaluation:** Evaluates active object definitions (`array`, `object`, `key`), retrieves data entries through cached communication tunnels, and loads data contents straight into target content layouts.
 5. **Head Compilation:** Extracts individual layout variables discovered inside nested sub-views, and compares properties against parent parameters to replace or append structural SEO elements like tags, styles, and descriptions.
-6. **Post-Processing Transformations:** Sets localization properties, establishes page theme hooks (`data-color-scheme`, `color-scheme`), and normalizes text markers matching `ObjectId()` with fresh production parameters.
+6. **Post-Processing Transformations:** Sets localization properties, establishes the page `color-scheme` theme hook, and normalizes text markers matching `ObjectId()` with fresh production parameters.
 
 ---
 
