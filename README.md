@@ -137,7 +137,7 @@ queries can resolve before the HTML is returned.
 
 ## Announcements
 
-All updates, architecture changes, and performance optimization details are documented in our `CHANGELOG.md` and the [CoCreate Server Side Render GitHub Releases](https://github.com/CoCreate-app/CoCreate-server-side-render/releases) page.
+All updates, architecture changes, and performance optimization details are documented in our `CHANGELOG.md` and the [CoCreate Server Side Render GitHub Releases](https://github.com/CoCreateJS/CoCreate-server-side-render/releases) page.
 
 ---
 
@@ -149,7 +149,7 @@ If you are interested in the future direction of this project, please take a loo
 
 ## How to Contribute
 
-We encourage contribution to our libraries (you might even score some nifty swag), please see our [CONTRIBUTING.md](https://github.com/CoCreate-app/CoCreate-server-side-render/blob/master/CONTRIBUTING.md) guide for details. If you encounter any bugs or wish to make feature requests, please submit an issue on our [GitHub Issues](https://github.com/CoCreate-app/CoCreate-server-side-render/issues) tracker. We want this library to be community-driven, and CoCreate led. We need your help to realize this goal.
+We encourage contribution to our libraries (you might even score some nifty swag), please see our [CONTRIBUTING.md](https://github.com/CoCreateJS/CoCreate-server-side-render/blob/master/CONTRIBUTING.md) guide for details. If you encounter any bugs or wish to make feature requests, please submit an issue on our [GitHub Issues](https://github.com/CoCreateJS/CoCreate-server-side-render/issues) tracker. We want this library to be community-driven, and CoCreate led. We need your help to realize this goal.
 
 For broader system configurations and API guides, please visit our [CoCreate Server Side Render Documentation](https://cocreatejs.com/docs/server-side-render).
 
@@ -160,7 +160,7 @@ For broader system configurations and API guides, please visit our [CoCreate Ser
 `@cocreate/server-side-render` is designed, built, and supported by the CoCreate Developer Experience Team.
 
 > [!NOTE]
-> Please contact the Developer Experience Team via [GitHub Discussions](https://github.com/CoCreate-app/CoCreate-server-side-render/discussions) or join our Discord channel for any architecture or deployment queries.
+> Please contact the Developer Experience Team via [GitHub Discussions](https://github.com/CoCreateJS/CoCreate-server-side-render/discussions) or join our Discord channel for any architecture or deployment queries.
 
 `@cocreate/server-side-render` is maintained and funded by CoCreate. The names and logos for CoCreate are trademarks of CoCreate, LLC.
 

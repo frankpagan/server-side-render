@@ -12,8 +12,8 @@ module.exports = {
                 "pathname": "/docs/server-side-render/index.html",
                 "src": "{{./docs/index.html}}",
                 "host": [
-                    "cocreate.app",
-                    "general.cocreate.app"
+                    "CoCreateJS.com",
+                    "general.CoCreateJS.com"
                 ],
                 "directory": "server-side-render",
                 "content-type": "text/html",
