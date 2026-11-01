@@ -94,6 +94,8 @@ function applyState(doc, state) {
  * @param {string} rootHtml - Main host HTML string
  * @param {string} chunkHtml - Fetched chunk HTML string
  * @returns {{ rootHtml: string, cleanChunkHtml: string }}
+ * @private
+ * @environment server
  */
 function extractAndMergeHead(rootHtml, chunkHtml) {
     const chunkDoc = new HTMLScanner(chunkHtml);
@@ -201,6 +203,8 @@ function mergeStylesheetLinks(html, links) {
  * @param {string} html - Full document HTML string
  * @param {string} theme - Selected theme name (e.g., 'dark')
  * @returns {string} Modified HTML
+ * @private
+ * @environment server
  */
 function applyTheme(html, theme) {
     const doc = new HTMLScanner(html);
@@ -237,6 +241,8 @@ function applyTheme(html, theme) {
  * @param {Object} organization - Organization metadata
  * @param {Object} urlObject - Request URL
  * @returns {string} Link tags string
+ * @private
+ * @environment server
  */
 function createLanguageLinkTags(file, organization, urlObject) {
     if (!organization?.languages?.length) return "";
@@ -255,6 +261,8 @@ function createLanguageLinkTags(file, organization, urlObject) {
  * @param {Record<string, Record<string, Object>>} sourceTranslations - Translation object from a fetched file.
  * @param {string} [langRegion] - Target locale code (e.g., "en-US").
  * @param {string} [lang] - Fallback primary language code (e.g., "en").
+ * @private
+ * @environment server
  */
 function mergeTranslationSource(targetMap, sourceTranslations, langRegion, lang) {
     if (!sourceTranslations) return;
@@ -277,6 +285,8 @@ function mergeTranslationSource(targetMap, sourceTranslations, langRegion, lang)
 /**
  * Fast Language-First Translator operating directly via HTMLScanner handles.
  * Scans for `[i18n]` attributes and replaces element content and attributes.
+ * @private
+ * @environment server
  */
 function translate(html, translations, langRegion, lang) {
     if (!html || !translations || (!langRegion && !lang)) return html;
@@ -333,6 +343,8 @@ function translate(html, translations, langRegion, lang) {
  * Main functional entry point for Server-Side Rendering using HTMLScanner.
  * @param {Object} options - SSR options
  * @returns {Promise<string>} Fully rendered and translated HTML string
+ * @public
+ * @environment server
  */
 export async function HTML({
     file,
@@ -596,3 +608,194 @@ export async function HTML({
     // Replace ObjectId() tokens across final rendered document
     return rootHtml.replaceAll("ObjectId()", () => ObjectId().toString());
 }
+
+/**
+ *
+ * @name actions
+ * @kind member
+ * @attribute
+ * @environment server
+ */
+
+/**
+ *
+ * @name array
+ * @kind member
+ * @attribute
+ * @environment server
+ */
+
+/**
+ *
+ * @name class
+ * @kind member
+ * @attribute
+ * @environment server
+ */
+
+/**
+ *
+ * @name component
+ * @kind member
+ * @attribute
+ * @environment server
+ */
+
+/**
+ *
+ * @name content
+ * @kind member
+ * @attribute
+ * @environment server
+ */
+
+/**
+ *
+ * @name color-scheme
+ * @kind member
+ * @attribute
+ * @environment server
+ */
+
+/**
+ *
+ * @name error
+ * @kind member
+ * @attribute
+ * @environment server
+ */
+
+/**
+ *
+ * @name filter
+ * @kind member
+ * @attribute
+ * @environment server
+ */
+
+/**
+ *
+ * @name href
+ * @kind member
+ * @attribute
+ * @environment server
+ */
+
+/**
+ *
+ * @name i18n
+ * @kind member
+ * @attribute
+ * @environment server
+ */
+
+/**
+ *
+ * @name key
+ * @kind member
+ * @attribute
+ * @environment server
+ */
+
+/**
+ *
+ * @name media
+ * @kind member
+ * @attribute
+ * @environment server
+ */
+
+/**
+ *
+ * @name name
+ * @kind member
+ * @attribute
+ * @environment server
+ */
+
+/**
+ *
+ * @name object
+ * @kind member
+ * @attribute
+ * @environment server
+ */
+
+/**
+ *
+ * @name plugin
+ * @kind member
+ * @attribute
+ * @environment server
+ */
+
+/**
+ *
+ * @name rel
+ * @kind member
+ * @attribute
+ * @environment server
+ */
+
+/**
+ *
+ * @name render-error
+ * @kind member
+ * @attribute
+ * @environment server
+ */
+
+/**
+ *
+ * @name render-query
+ * @kind member
+ * @attribute
+ * @environment server
+ */
+
+/**
+ *
+ * @name rendered
+ * @kind member
+ * @attribute
+ * @environment server
+ */
+
+/**
+ *
+ * @name src
+ * @kind member
+ * @attribute
+ * @environment server
+ */
+
+/**
+ *
+ * @name state-id
+ * @kind member
+ * @attribute
+ * @environment server
+ */
+
+/**
+ *
+ * @name state-overwrite
+ * @kind member
+ * @attribute
+ * @environment server
+ */
+
+/**
+ *
+ * @name type
+ * @kind member
+ * @attribute
+ * @environment server
+ */
+
+/**
+ * High-performance, stateless server-side rendering (SSR) engine with recursive HTML template parsing, multi-source data resolution, and automated circular dependency protection.
+ *
+ * @module server-side-render
+ * @environment server
+ */
